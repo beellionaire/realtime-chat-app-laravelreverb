@@ -2,14 +2,18 @@
 
 namespace App\Models;
 
+use App\Models\Conversation;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -27,12 +31,16 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password'])]
+
+#[Fillable(['name', 'email', 'password', 'avatar_path', 'about', 'last_seen_at'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+
+
+    protected $appends = ['avatar_url'];
 
     /**
      * Get the attributes that should be cast.
@@ -47,4 +55,19 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             'two_factor_confirmed_at' => 'datetime',
         ];
     }
+
+    protected function avatarUrl(): Attribute
+    {
+        return Attribute::get( fn() => $this->avatar_path
+            ? Storage::disk('public')->url($this->avatar_path) : null
+
+        );
+    }
+
+    public function conversations(): BelongsToMany {
+        return $this->belongsToMany(Conversation::class, 'conversation_participants')
+            ->withPivot(['role', 'joined_at', 'last_read_at', 'muted_at'])
+            ->withTimestamps();
+    }
+
 }
