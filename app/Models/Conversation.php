@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -9,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Storage;
 
 #[Fillable(['type','name','avatar_path','created_by','last_message_by'])]
 class Conversation extends Model
@@ -104,6 +106,61 @@ class Conversation extends Model
         $this->update(['last_message_at' => $message->created_at]);
 
         return $message;
+
+    }
+
+    /**
+     * shape shared with the frontend (sidebar+header). when $for is given
+     * per user fields like unread_count and muted are included
+     */
+    public function toChatArray(?User $for = null): array
+    {
+        $this->loadMissing(['participants', 'lastMessage.sender']);
+
+        $me = $for ? $this->participants->firstWhere('id', $for->id) : null;
+
+        $unreadCount = null;
+
+        if ($me) {
+            $unreadCount = $this->messages()
+                ->where('user_id', '!=', $for->id)
+                ->when($me->pivot->last_read_at, fn ($q, $t) => $q->where('created_at', '>', $t))
+                ->count();
+        }
+
+        return [
+            'id' => $this->id,
+            'type' => $this->type,
+            'name' => $this->name,
+            'avatar_url' => $this->avatar_path 
+                ? Storage::disk('public')->url($this->avatar_path)
+                : null,
+            'created_by' => $this->created_by,
+            'last_message_at' => $this->last_message_at?->toIso8601String(),
+            'participants' => $this->participants->map(fn(User $u) => [
+                'id' => $u->id,
+                'name' => $u->name,
+                'avatar_url' => $u->avatar_url,
+                'about' => $u->about,
+                'last_seen_at' => $u->last_seen_at?->toIso8601String(),
+                'role' => $u->pivot->role,
+                'last_read_at' => $u->pivot->last_read_at
+                    ? Carbon::parse($u->pivot->last_read_at)->toIso8601String()
+                    : null,
+                ])->values()->all(),
+            'last_message' => $this->lastMessage ? [
+                'id' => $this->lastMessage->id,
+                'type' => $this->lastMessage->type,
+                'body' => $this->lastMessage->deleted_at ? null : $this->lastMessage->body,
+                'is_deleted' => (bool) $this->lastMessage->deleted_at,
+                'attachment_name' => $this->lastMessage->attachment_name,
+                'sender_id' => $this->lastMessage->user_id,
+                'sender_name' => $this->lastMessage->sender?->name,
+                'created_at' => $this->lastMessage->created_at->toIso8601String(),
+            ] : null,
+            'unread_count' => $unreadCount,
+            'muted' => $me ? (bool) $me->pivot->muted_at : false,
+        ];
 
     }
 

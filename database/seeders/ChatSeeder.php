@@ -54,7 +54,7 @@ class ChatSeeder extends Seeder
                 ]);
             }
 
-            $direct->update(['last_message_at'] => $direct->messages()->max('created_at'));
+            $direct->update(['last_message_at' => $direct->messages()->max('created_at')]);
 
         }
 
