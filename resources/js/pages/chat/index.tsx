@@ -1,207 +1,131 @@
-import { Head, usePage } from "@inertiajs/react";
-import { MessageSquare } from "lucide-react";
-import { useCallback, useState } from "react";
-import { toast } from "sonner";
+import { Head, Link } from "@inertiajs/react";
+import { useState } from "react";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { ChatSidebar } from "@/components/chat/chat-sidebar";
-import { chatApi } from "@/lib/chat-api";
-import { cn } from "@/lib/utils";
-import { Auth } from "@/types";
-import { ChatMessage, Conversation } from "@/types/chat";
+import { ChatEmptyState } from "@/components/chat/chat-empty-state";
 import { NewChatDialog } from "@/components/chat/new-chat-dialog";
-
-// 1. TIPE DATA PROPS
-// Dapat dari mana? Ini adalah struktur data yang dikirim oleh backend (Laravel ChatController) lewat Inertia.
-type PageProps = {
-    auth: Auth; // Data user yang sedang login
-    conversations: Conversation[]; // Daftar semua obrolan untuk Sidebar
-    activeConversation: Conversation | null; // Data obrolan yang sedang diklik/dibuka
-    messages: ChatMessage[]; // Riwayat pesan dari obrolan yang sedang dibuka
-};
-
-const PAGE_SIZE = 30; // Konstanta pembatas jumlah pesan untuk fitur Infinite Scroll
+import { useChatLogic } from "@/hooks/use-chat-logic";
+import { cn } from "@/lib/utils";
+// ✅ IMPORT ICON BARU UNTUK MINI SIDEBAR
+import {
+    LayoutDashboard,
+    MessageSquare,
+    Phone,
+    Settings,
+    Users,
+} from "lucide-react";
 
 export default function ChatIndex() {
-    // 2. MENGAMBIL DATA DARI BACKEND
-    // usePage() adalah hook bawaan Inertia.js untuk menangkap data dari Laravel.
-    const { props } = usePage<PageProps>();
-    const me = props.auth.user;
-
-    // 3. STATE LOKAL (REACT)
-    // Fungsinya: Menyimpan salinan data dari server agar React bisa mengubah tampilannya
-    // secara instan (real-time) tanpa perlu memuat ulang (refresh) halaman.
-    const [conversations, setConversations] = useState<Conversation[]>(
-        props.conversations,
-    );
     const [dialog, setDialog] = useState<
         "chat" | "group" | "info" | "search" | null
     >(null);
-    const [messages, setMessages] = useState<ChatMessage[]>(
-        props.messages ?? [],
-    );
+    const chat = useChatLogic();
 
-    const [hasMore, setHasMore] = useState(
-        (props.messages?.length ?? 0) >= PAGE_SIZE,
-    ); // Cek apakah masih ada pesan lama
-    const [loadingOlder, setLoadingOlder] = useState(false); // Indikator loading scroll ke atas
-    const [sending, setSending] = useState(false); // Indikator loading saat kirim pesan
-
-    const activeId = props.activeConversation?.id ?? null;
-    const activeConversation = props.activeConversation;
-
-    // 4. SINKRONISASI DATA (SERVER -> LOKAL)
-    // Alur: Saat user mengklik chat lain di Sidebar, URL berubah, dan Inertia mengirim props baru.
-    // Blok if ini mendeteksi perubahan tersebut dan langsung memperbarui state lokal.
-    const [prevConversationsProp, setPrevConversationsProp] = useState(
-        props.conversations,
-    );
-    if (prevConversationsProp !== props.conversations) {
-        setPrevConversationsProp(props.conversations);
-        setConversations(props.conversations);
-    }
-
-    const [prevMessagesProp, setPrevMessagesProp] = useState(props.messages);
-    if (prevMessagesProp !== props.messages) {
-        setPrevMessagesProp(props.messages);
-        setMessages(props.messages ?? []);
-        setHasMore((props.messages?.length ?? 0) >= PAGE_SIZE);
-    }
-
-    // 5. HELPER: UPDATE SIDEBAR
-    // Fungsinya untuk mengurutkan ulang Sidebar agar chat yang baru saja aktif naik ke paling atas.
-    const sortConversations = (list: Conversation[]) =>
-        [...list].sort((a, b) =>
-            (b.last_message_at ?? "").localeCompare(a.last_message_at ?? ""),
-        );
-
-    // Fungsinya untuk memperbarui data SATU item chat di Sidebar (misal: mengganti teks cuplikan pesan terakhir).
-    const patchConversation = useCallback(
-        (id: number, patch: (c: Conversation) => Conversation) => {
-            setConversations((current) =>
-                sortConversations(
-                    current.map((c) => (c.id === id ? patch(c) : c)),
-                ),
-            );
-        },
-        [],
-    );
-
-    // 6. AKSI: KIRIM PESAN
-    // Alur: Dipanggil saat tombol "Send" ditekan -> Tembak API -> Update layar pesan -> Update cuplikan di Sidebar
-    const sendMessage = useCallback(
-        (body: string) => {
-            if (!activeConversation) return;
-            setSending(true);
-
-            // Tembak API ke Laravel (MessageController @store)
-            chatApi
-                .post<{ message: ChatMessage }>(
-                    `/conversations/${activeConversation.id}/messages`,
-                    { body },
-                )
-                .then(({ message }) => {
-                    // Berhasil! Masukkan pesan baru ke urutan terbawah di layar utama
-                    setMessages((current) =>
-                        current.some((m) => m.id === message.id)
-                            ? current
-                            : [...current, message],
-                    );
-
-                    // Perbarui cuplikan "pesan terakhir" di Sidebar sebelah kiri
-                    patchConversation(activeConversation.id, (c) => ({
-                        ...c,
-                        last_message_at: message.created_at,
-                        lastMessage: {
-                            id: message.id,
-                            type: message.type,
-                            body: message.body,
-                            is_deleted: false,
-                            attachment_name: null,
-                            sender_id: me.id,
-                            sender_name: me.name,
-                            created_at: message.created_at,
-                        },
-                    }));
-                })
-                .catch((error: Error) => toast.error(error.message)) // Tampilkan notif error jika gagal
-                .finally(() => setSending(false)); // Matikan efek loading
-        },
-        [activeConversation, me.id, me.name, patchConversation],
-    );
-
-    // 7. AKSI: MUAT PESAN LAMA (INFINITE SCROLL)
-    // Alur: Dipanggil otomatis saat user men-scroll layar ke ujung atas.
-    const loadOlder = useCallback(() => {
-        if (!activeConversation || messages.length === 0) return;
-        setLoadingOlder(true);
-
-        // Ambil data pesan dengan ID yang lebih lama dari pesan teratas saat ini
-        chatApi
-            .get<{ messages: ChatMessage[]; has_more: boolean }>(
-                `/conversations/${activeConversation.id}/messages?before=${messages[0].id}`,
-            )
-            .then((data) => {
-                // Selipkan riwayat pesan lama ke paling ATAS array (bukan di bawah)
-                setMessages((current) => [...data.messages, ...current]);
-                setHasMore(data.has_more); // Cek apa riwayatnya sudah habis?
-            })
-            .catch(() => {})
-            .finally(() => setLoadingOlder(false));
-    }, [activeConversation, messages]);
-
-    // 8. RENDER TAMPILAN (UI)
     return (
-        <div className="flex h-screen w-full overflow-hidden bg-background">
+        <div className="flex h-screen w-full overflow-hidden bg-[#FAFAFA]">
             <Head title="Chat" />
 
-            {/* --- BAGIAN KIRI: SIDEBAR --- */}
-            {/* Hanya tampil di HP jika tidak ada chat yang dibuka (activeConversation kosong) */}
+            {/* --- 1. MINI SIDEBAR (NAVIGATION RAIL) KHUSUS DESKTOP --- */}
+            {/* Sembunyi di mobile (hidden), muncul di layar medium ke atas (md:flex) */}
+            <div className="hidden md:flex w-[72px] flex-shrink-0 flex-col items-center justify-between border-r-2 border-black bg-white py-6">
+                {/* Menu Atas (Chat, Call, Contact) */}
+                <div className="flex flex-col gap-5">
+                    <Link
+                        href="/chat"
+                        title="Chats"
+                        className="flex size-12 items-center justify-center rounded-none border-2 border-black bg-[#FFD800] shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-transform hover:-translate-y-[1px]"
+                    >
+                        <MessageSquare
+                            className="size-6 text-black"
+                            strokeWidth={2.5}
+                        />
+                    </Link>
+
+                    <button
+                        title="Calls"
+                        className="flex size-12 items-center justify-center rounded-none border-2 border-transparent bg-white text-black transition-all hover:border-black hover:bg-[#FAFAFA] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                    >
+                        <Phone className="size-6" strokeWidth={2.5} />
+                    </button>
+
+                    <button
+                        title="Contacts"
+                        className="flex size-12 items-center justify-center rounded-none border-2 border-transparent bg-white text-black transition-all hover:border-black hover:bg-[#FAFAFA] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                    >
+                        <Users className="size-6" strokeWidth={2.5} />
+                    </button>
+                </div>
+
+                {/* Menu Bawah (Dashboard, Settings) */}
+                <div className="flex flex-col gap-5">
+                    <Link
+                        href="/dashboard"
+                        title="Back to Dashboard"
+                        className="flex size-12 items-center justify-center rounded-none border-2 border-transparent bg-white text-black transition-all hover:border-black hover:bg-[#FAFAFA] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                    >
+                        <LayoutDashboard className="size-6" strokeWidth={2.5} />
+                    </Link>
+
+                    <button
+                        title="Settings"
+                        className="flex size-12 items-center justify-center rounded-none border-2 border-transparent bg-white text-black transition-all hover:border-black hover:bg-[#FAFAFA] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                    >
+                        <Settings className="size-6" strokeWidth={2.5} />
+                    </button>
+                </div>
+            </div>
+
+            {/* --- 2. BAGIAN TENGAH: SIDEBAR LIST CHAT --- */}
             <div
                 className={cn(
-                    "h-full w-full md:w-auto",
-                    activeConversation && "hidden md:block",
+                    "h-full w-full flex-shrink-0 border-black md:w-[340px] md:border-r-2 lg:w-[400px]",
+                    chat.activeConversation ? "hidden md:block" : "block",
                 )}
             >
                 <ChatSidebar
-                    conversations={conversations}
-                    activeId={activeId}
-                    meId={me.id}
-                    onlineIds={new Set()}
-                    typingByConversation={{}}
+                    conversations={chat.conversations}
+                    activeId={chat.activeId}
+                    meId={chat.me.id}
+                    onlineIds={chat.onlineIds}
+                    typingByConversation={chat.typingNamesByConversation}
                     onNewChat={() => setDialog("chat")}
                     onNewGroup={() => setDialog("group")}
                     onSearch={() => setDialog("search")}
                 />
             </div>
 
-            {/* --- BAGIAN KANAN: PANEL CHAT UTAMA --- */}
-            {activeConversation ? (
-                // Jika ADA obrolan yang dipilih: Tampilkan komponen ruang obrolan (Header, Daftar Pesan, Input Ketik)
-                <ChatPanel
-                    conversation={activeConversation}
-                    messages={messages}
-                    meId={me.id}
-                    hasMore={hasMore}
-                    loadingOlder={loadingOlder}
-                    sending={sending}
-                    onLoadOlder={loadOlder}
-                    onSend={sendMessage}
-                />
-            ) : (
-                // Jika BELUM ADA obrolan yang dipilih: Tampilkan layar kosong berlogo
-                <div
-                    className={cn(
-                        "min-w-0 flex-1 flex-col items-center justify-center gap-3 bg-muted/20 text-muted-foreground",
-                        activeConversation ? "hidden" : "hidden md:flex",
-                    )}
-                >
-                    <MessageSquare className="size-16 opacity-30" />
-                    <p className="text-lg font-medium">Select a conversation</p>
-                    <p className="text-sm">or start a new from the sidebar</p>
-                </div>
-            )}
+            {/* --- 3. BAGIAN KANAN: PANEL CHAT ATAU LAYAR KOSONG --- */}
+            <div
+                className={cn(
+                    "flex-1 h-full min-w-0 bg-[#FAFAFA]",
+                    !chat.activeConversation
+                        ? "hidden md:flex flex-col"
+                        : "flex flex-col",
+                )}
+            >
+                {chat.activeConversation ? (
+                    <ChatPanel
+                        conversation={chat.activeConversation}
+                        messages={chat.messages}
+                        meId={chat.me.id}
+                        onlineIds={chat.onlineIds}
+                        typingNames={
+                            chat.typingNamesByConversation[
+                                chat.activeConversation.id
+                            ] ?? []
+                        }
+                        hasMore={chat.hasMore}
+                        loadingOlder={chat.loadingOlder}
+                        sending={chat.sending}
+                        onLoadOlder={chat.loadOlder}
+                        onSend={chat.sendMessage}
+                        onTyping={chat.sendTypingWhisper}
+                    />
+                ) : (
+                    <ChatEmptyState isActive={!!chat.activeConversation} />
+                )}
+            </div>
 
-            {/* KOMPONEN POP-UP: Bikin chat / cari teman baru */}
             <NewChatDialog
                 open={dialog === "chat"}
                 onOpenChange={(o) => setDialog(o ? "chat" : null)}

@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Storage;
 
-#[Fillable(['type','name','avatar_path','created_by','last_message_by'])]
+#[Fillable(['type','name','avatar_path','created_by','last_message_by','last_message_at'])]
 class Conversation extends Model
 {
 
@@ -103,7 +103,7 @@ class Conversation extends Model
             'body' => $body,
         ]);
 
-        $this->update(['last_message_at' => $message->created_at]);
+        $this->forceFill(['last_message_at' => $message->created_at])->save();
 
         return $message;
 

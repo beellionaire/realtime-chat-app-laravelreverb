@@ -1,4 +1,4 @@
-import { SendHorizonal } from "lucide-react";
+import { Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { Button } from "../ui/button";
@@ -8,90 +8,72 @@ export function MessageComposer({
     sending,
     onSend,
     onTyping,
-}: {
-    conversationId: number;
-    sending: boolean;
-    onSend: (body: string) => void;
-    onTyping: () => void;
-}) {
-    // State untuk menyimpan teks yang sedang diketik
+}: any) {
     const [body, setBody] = useState("");
-
-    // Referensi untuk memanipulasi elemen textarea secara langsung (DOM)
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-    // Efek: Kosongkan input dan langsung arahkan kursor (focus) saat user pindah ruang chat
     useEffect(() => {
         setBody("");
         textareaRef.current?.focus();
     }, [conversationId]);
 
-    // Fungsi agar kotak teks otomatis meninggi saat teks mulai panjang (maksimal 160px)
     const autoGrow = () => {
         const el = textareaRef.current;
         if (!el) return;
-
-        el.style.height = "auto"; // Reset tinggi ke default dulu
-        el.style.height = `${Math.min(el.scrollHeight, 160)}px`; // Set sesuai tinggi konten
+        el.style.height = "auto";
+        el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
     };
 
-    // Fungsi untuk mengeksekusi pengiriman pesan
     const submit = () => {
         const trimmed = body.trim();
-
-        // Jangan lakukan apa-apa jika teks hanya berisi spasi kosong
         if (!trimmed) return;
-
-        // Panggil fungsi onSend (disediakan oleh komponen induk) untuk mengirim data
         onSend(trimmed);
-
-        // Reset kolom input dan kembalikan tinggi kotak teks seperti semula
         setBody("");
-        if (textareaRef.current) {
-            textareaRef.current.style.height = "auto";
-        }
+        if (textareaRef.current) textareaRef.current.style.height = "auto";
     };
 
-    // Deteksi aksi keyboard pada textarea
     const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-        // Jika user menekan tombol 'Enter' SAJA (tanpa menahan tombol Shift)
         if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault(); // Cegah enter membuat baris baru di teks
-            submit(); // Kirim pesan
+            event.preventDefault();
+            submit();
         }
     };
 
-    // Dijalankan setiap kali ada huruf baru yang diketik
     const handleChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
-        setBody(event.target.value); // Simpan huruf ke state
-        autoGrow(); // Sesuaikan tinggi kotak
-        onTyping(); // Kirim sinyal "sedang mengetik..." ke backend/lawan bicara
+        setBody(event.target.value);
+        autoGrow();
+        onTyping();
     };
 
     return (
-        <div className="border-t bg-background p-3">
-            <div className="flex items-end gap-1.5 rounded-2xl border bg-muted/20 px-2 py-1.5">
+        <div className="bg-[#FAFAFA] p-4 border-t-2 border-black">
+            <div className="flex items-end gap-3 max-w-4xl mx-auto w-full">
                 <textarea
                     ref={textareaRef}
                     value={body}
-                    onChange={handleChange}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Type a message"
+                    onChange={(e) => {
+                        setBody(e.target.value);
+                        onTyping();
+                    }}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            submit();
+                        }
+                    }}
+                    placeholder="Type a message..."
                     rows={1}
-                    className="max-h-40 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+                    className="max-h-40 min-h-[52px] flex-1 resize-none rounded-none border-2 border-black bg-white p-3.5 text-sm font-medium text-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] outline-none placeholder:text-black/40 focus:translate-x-[2px] focus:translate-y-[2px] focus:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
                 />
 
-                {/* PERBAIKAN BUG: Tombol kirim tidak lagi berupa tag penutup mandiri (self-closing) */}
+                {/* Tombol Send Hitam Solid */}
                 <Button
                     size="icon"
-                    className="size-9 shrink-0 rounded-full"
-                    // PERBAIKAN BUG: .trim() adalah function, jadi butuh tanda kurung ()
                     disabled={sending || !body.trim()}
                     onClick={submit}
-                    title="Send"
+                    className="size-[52px] shrink-0 rounded-none border-2 border-black bg-black text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-[#FFD800] hover:text-black hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[4px] active:translate-y-[4px] active:shadow-none disabled:opacity-50 transition-all"
                 >
-                    {/* PERBAIKAN BUG: Ikon SendHorizonal harus berada DI DALAM tag Button, bukan di luarnya */}
-                    <SendHorizonal className="size-4" />
+                    <Send className="size-5" strokeWidth={2.5} />
                 </Button>
             </div>
         </div>

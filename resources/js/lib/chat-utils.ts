@@ -152,3 +152,27 @@ export function formatDayLabel(iso: string): string {
         year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
     });
 }
+
+export function formatLastSeen(iso: string | null): string {
+    if (!iso) {
+        return "offline";
+    }
+
+    const date = new Date(iso);
+    const now = new Date();
+    const minutes = Math.floor((now.getTime() - date.getTime()) / 60_000);
+
+    if (minutes < 2) {
+        return "last seen just now";
+    }
+
+    if (minutes < 60) {
+        return `last seen ${minutes} min ago`;
+    }
+
+    if (isSameDay(date, now)) {
+        return `last seen today at ${formatClock(iso)}`;
+    }
+
+    return `last seen ${date.toLocaleDateString([], { day: "numeric", month: "short" })} at ${formatClock(iso)}`;
+}
